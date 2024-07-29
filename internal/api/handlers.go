@@ -6,6 +6,7 @@ import (
 
 	"github.com/judaesqu/ProyectoinventarioGO/encryption"
 	"github.com/judaesqu/ProyectoinventarioGO/internal/api/dtos"
+	"github.com/judaesqu/ProyectoinventarioGO/internal/models"
 	"github.com/judaesqu/ProyectoinventarioGO/internal/service"
 	"github.com/labstack/echo/v4"
 )
@@ -73,11 +74,62 @@ func (a *API) LoginUser(c echo.Context) error {
 		Value:    token,
 		Secure:   true,
 		SameSite: http.SameSiteNoneMode,
-		HttpOnly: true,
+		Path:     "/",
 	}
 
 	c.SetCookie(cookie)
 
 	return c.JSON(http.StatusOK, map[string]string{"success": "true"})
 
+}
+
+func (a *API) AddProduct(c echo.Context) error {
+
+	cookie, err := c.Cookie("Authorization")
+	if err != nil {
+		log.Println(err)
+		return c.JSON(http.StatusUnauthorized, responseMessage{Message: "Unauthorized"})
+	}
+
+	claims, err := encryption.ParseLoginJWT(cookie.Value)
+	if err != nil {
+		log.Println(err)
+		return c.JSON(http.StatusUnauthorized, responseMessage{Message: "Unauthorized"})
+	}
+
+	email := claims["email"].(string)
+
+	ctx := c.Request().Context()
+	params := dtos.AddProduct{}
+
+	err = c.Bind(&params)
+	if err != nil {
+		log.Println(err)
+		return c.JSON(http.StatusBadRequest, responseMessage{Message: "Invalida request"})
+	}
+
+	err = a.dataValidator.Struct(params)
+	if err != nil {
+		log.Println(err)
+		return c.JSON(http.StatusBadRequest, responseMessage{Message: err.Error()})
+	}
+
+	p := models.Product{
+		Name:        params.Name,
+		Description: params.Description,
+		Price:       params.Price,
+	}
+
+	err = a.serv.AddProduct(ctx, p, email)
+	if err != nil {
+		log.Println(err)
+
+		if err == service.ErrInvalidPermissions {
+			return c.JSON(http.StatusForbidden, responseMessage{Message: "Invalid permissions"})
+		}
+
+		return c.JSON(http.StatusInternalServerError, responseMessage{Message: "Internal server error"})
+	}
+
+	return c.JSON(http.StatusOK, nil)
 }
